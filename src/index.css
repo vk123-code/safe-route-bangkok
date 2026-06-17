@@ -1,0 +1,76 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+@import "tailwindcss";
+
+:root {
+  background: #f5f5f5;
+  color: #1f2937;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(31, 41, 55, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 41, 55, 0.035) 1px, transparent 1px),
+    #f5f5f5;
+  background-size: 34px 34px;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+.display-serif {
+  font-family: "Instrument Serif", serif;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.leaflet-container {
+  font-family: "Space Grotesk", sans-serif;
+  background: #e7ecef;
+}
+
+.leaflet-control-attribution {
+  font-size: 9px;
+}
+
+.field-label {
+  font-family: "IBM Plex Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  color: #6b7280;
+}
+
+.paper-card {
+  background: #ffffff;
+  border: 1px solid #d8dde3;
+  box-shadow: 0 10px 24px rgba(31, 41, 55, 0.08);
+}
+
+.paper-card-soft {
+  background: #fafafa;
+  border: 1px solid #d8dde3;
+}
+
+.route-stamp {
+  border: 1px dashed #005a9c;
+  color: #005a9c;
+  background: #edf6ff;
+}
+
+::selection {
+  background: #005a9c;
+  color: white;
+}
