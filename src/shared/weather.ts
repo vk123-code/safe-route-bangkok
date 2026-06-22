@@ -2,22 +2,10 @@ import { districts } from "./data";
 import type { District, RainTrend, RainfallPoint, RiskLevel } from "./data";
 
 type ForecastResponse = {
-  current?: {
-    time?: string;
-    rain?: number;
-    precipitation?: number;
-  };
   hourly?: {
     time?: string[];
     rain?: Array<number | null>;
     precipitation?: Array<number | null>;
-  };
-};
-
-type FloodResponse = {
-  daily?: {
-    time?: string[];
-    river_discharge?: Array<number | null>;
   };
 };
 
@@ -30,42 +18,37 @@ function toBangkokTimestamp(openMeteoTime: string) {
   return new Date(`${openMeteoTime}:00+07:00`).getTime();
 }
 
-function rainfallRiskPoints(mm: number) {
-  if (mm >= 60) return 6;
-  if (mm >= 40) return 4;
-  if (mm >= 20) return 2;
-  return 0;
-}
-
-function riverRiskPoints(discharge: number | null) {
-  if (discharge === null) return 0;
-  if (discharge >= 1200) return 4;
-  if (discharge >= 800) return 2;
-  return 0;
-}
-
-function riskLevelFromScore(score: number): RiskLevel {
-  if (score >= 8) return "High";
-  if (score >= 4) return "Medium";
-  return "Low";
-}
-
 function calculateTrend(points: RainfallPoint[]): RainTrend {
   if (points.length < 6) return "steady";
 
   const recent = points.slice(-3).reduce((sum, point) => sum + point.mm, 0);
   const previous = points.slice(-6, -3).reduce((sum, point) => sum + point.mm, 0);
 
-  if (recent > previous + 3) return "worsening";
-  if (recent < previous - 3) return "improving";
+  if (recent > previous + 2) return "worsening";
+  if (recent < previous - 2) return "improving";
   return "steady";
 }
 
-async function fetchForecastForPoint(lat: number, lng: number) {
+function riskLevelFromRain(currentRain: number, next3hRain: number, trend: RainTrend): RiskLevel {
+  const strongestSignal = Math.max(currentRain, next3hRain);
+
+  let score = 0;
+
+  if (strongestSignal >= 60) score += 6;
+  else if (strongestSignal >= 40) score += 4;
+  else if (strongestSignal >= 20) score += 2;
+
+  if (trend === "worsening") score += 2;
+
+  if (score >= 6) return "High";
+  if (score >= 2) return "Medium";
+  return "Low";
+}
+
+async function fetchForecastForPoint(lat: number, lng: number): Promise<ForecastResponse> {
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
-    current: "rain,precipitation",
     hourly: "rain,precipitation",
     timezone: "Asia/Bangkok",
     past_days: "1",
@@ -77,49 +60,19 @@ async function fetchForecastForPoint(lat: number, lng: number) {
   );
 
   if (!response.ok) {
-    throw new Error("Open-Meteo forecast request failed");
+    throw new Error(`Open-Meteo request failed with status ${response.status}`);
   }
 
   return (await response.json()) as ForecastResponse;
-}
-
-async function fetchFloodForPoint(lat: number, lng: number) {
-  const params = new URLSearchParams({
-    latitude: String(lat),
-    longitude: String(lng),
-    daily: "river_discharge",
-    past_days: "1",
-    forecast_days: "7",
-  });
-
-  const response = await fetch(
-    `https://flood-api.open-meteo.com/v1/flood?${params.toString()}`
-  );
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = (await response.json()) as FloodResponse;
-
-  const values = data.daily?.river_discharge ?? [];
-  const validValues = values.filter(
-    (value): value is number => typeof value === "number"
-  );
-
-  if (validValues.length === 0) return null;
-
-  return validValues[0];
 }
 
 function extractRainfallPoints(data: ForecastResponse): RainfallPoint[] {
   const times = data.hourly?.time ?? [];
   const rain = data.hourly?.rain ?? [];
   const precipitation = data.hourly?.precipitation ?? [];
-
   const now = Date.now();
 
-  return times
+  const points = times
     .map((time, index) => {
       const rawRain = rain[index] ?? precipitation[index] ?? 0;
 
@@ -132,6 +85,12 @@ function extractRainfallPoints(data: ForecastResponse): RainfallPoint[] {
     .filter((point) => point.timestamp <= now)
     .slice(-12)
     .map(({ time, mm }) => ({ time, mm }));
+
+  if (points.length === 0) {
+    return [{ time: "No data", mm: 0 }];
+  }
+
+  return points;
 }
 
 function extractCurrentAndForecastRain(data: ForecastResponse) {
@@ -146,25 +105,24 @@ function extractCurrentAndForecastRain(data: ForecastResponse) {
     mm: Number((rain[index] ?? precipitation[index] ?? 0).toFixed(1)),
   }));
 
-  const currentIndex = indexed.findLastIndex((point) => point.timestamp <= now);
+  let currentIndex = 0;
 
-  const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+  for (let i = 0; i < indexed.length; i += 1) {
+    if (indexed[i].timestamp <= now) {
+      currentIndex = i;
+    }
+  }
 
-  const currentRainfall =
-    data.current?.rain ??
-    data.current?.precipitation ??
-    indexed[safeCurrentIndex]?.mm ??
-    0;
+  const currentRainfall = indexed[currentIndex]?.mm ?? 0;
 
-  const next3hRainfall = Math.max(
-    ...indexed
-      .slice(safeCurrentIndex, safeCurrentIndex + 4)
-      .map((point) => point.mm),
-    currentRainfall
-  );
+  const nextFewHours = indexed
+    .slice(currentIndex, currentIndex + 4)
+    .map((point) => point.mm);
+
+  const next3hRainfall = Math.max(currentRainfall, ...nextFewHours);
 
   const past6hRainfall = indexed
-    .slice(Math.max(0, safeCurrentIndex - 5), safeCurrentIndex + 1)
+    .slice(Math.max(0, currentIndex - 5), currentIndex + 1)
     .reduce((sum, point) => sum + point.mm, 0);
 
   return {
@@ -185,24 +143,16 @@ export async function fetchLiveBangkokData() {
 
   const liveDistricts: District[] = await Promise.all(
     districts.map(async (district) => {
-      const [forecast, riverDischarge] = await Promise.all([
-        fetchForecastForPoint(district.lat, district.lng),
-        fetchFloodForPoint(district.lat, district.lng),
-      ]);
-
+      const forecast = await fetchForecastForPoint(district.lat, district.lng);
       const districtRainfallTrend = extractRainfallPoints(forecast);
       const trend = calculateTrend(districtRainfallTrend);
       const rainStats = extractCurrentAndForecastRain(forecast);
 
-      const rainScore = rainfallRiskPoints(
-        Math.max(rainStats.currentRainfallMmHr, rainStats.next3hRainfallMmHr)
+      const risk = riskLevelFromRain(
+        rainStats.currentRainfallMmHr,
+        rainStats.next3hRainfallMmHr,
+        trend
       );
-
-      const trendScore = trend === "worsening" ? 2 : 0;
-      const riverScore = riverRiskPoints(riverDischarge);
-
-      const totalScore = rainScore + trendScore + riverScore;
-      const risk = riskLevelFromScore(totalScore);
 
       return {
         ...district,
@@ -212,9 +162,9 @@ export async function fetchLiveBangkokData() {
         currentRainfallMmHr: rainStats.currentRainfallMmHr,
         next3hRainfallMmHr: rainStats.next3hRainfallMmHr,
         past6hRainfallMm: rainStats.past6hRainfallMm,
-        riverDischargeM3s: riverDischarge,
+        riverDischargeM3s: null,
         trend,
-        dataSource: "Open-Meteo Forecast API + Open-Meteo Flood API",
+        dataSource: "Open-Meteo Forecast API",
         updatedAt: new Date().toISOString(),
       };
     })
@@ -224,7 +174,7 @@ export async function fetchLiveBangkokData() {
     districts: liveDistricts,
     rainfallTrend,
     cityTrend,
-    source: "Open-Meteo Forecast API + Open-Meteo Flood API",
+    source: "Open-Meteo Forecast API",
     updatedAt: new Date().toISOString(),
   };
 }

@@ -10,6 +10,7 @@ import {
   rainfallTrend as fallbackRainfallTrend,
   sensors,
 } from "./shared/data";
+import { fetchLiveBangkokData } from "./shared/weather";
 import { calculateRiskWithDistricts } from "./shared/risk";
 import type { District, RainfallPoint } from "./shared/data";
 import type { RiskResult } from "./shared/risk";
@@ -21,7 +22,7 @@ export default function App() {
   const [selectedDistrict, setSelectedDistrict] = useState<District | null>(null);
   const [rainfallTrend, setRainfallTrend] =
     useState<RainfallPoint[]>(fallbackRainfallTrend);
-  const [dataSource, setDataSource] = useState("Loading live data...");
+  const [dataSource, setDataSource] = useState("Loading live Open-Meteo data...");
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const [riskResult, setRiskResult] = useState<RiskResult>(
@@ -29,17 +30,14 @@ export default function App() {
       "Bang Kapi",
       "Pathum Wan",
       fallbackDistricts,
-      "07:30"
+      "09:30"
     )
   );
 
   const fallbackDistrict = useMemo(() => {
     return [...districts].sort((a, b) => {
-      const bScore =
-        (b.next3hRainfallMmHr ?? b.rainfall) + (b.riverDischargeM3s ?? 0) / 100;
-      const aScore =
-        (a.next3hRainfallMmHr ?? a.rainfall) + (a.riverDischargeM3s ?? 0) / 100;
-
+      const bScore = b.next3hRainfallMmHr ?? b.rainfall;
+      const aScore = a.next3hRainfallMmHr ?? a.rainfall;
       return bScore - aScore;
     })[0];
   }, [districts]);
@@ -47,22 +45,17 @@ export default function App() {
   useEffect(() => {
     async function loadLiveData() {
       try {
-        const response = await fetch("/api/live");
-
-        if (!response.ok) {
-          throw new Error("Live API failed");
-        }
-
-        const data = await response.json();
+        const data = await fetchLiveBangkokData();
 
         setDistricts(data.districts ?? fallbackDistricts);
         setRainfallTrend(data.rainfallTrend ?? fallbackRainfallTrend);
-        setDataSource(data.source ?? "Open-Meteo");
+        setDataSource(data.source ?? "Open-Meteo Forecast API");
         setUpdatedAt(data.updatedAt ?? null);
-      } catch {
+      } catch (error) {
+        console.error("Frontend live data error:", error);
         setDistricts(fallbackDistricts);
         setRainfallTrend(fallbackRainfallTrend);
-        setDataSource("Live data unavailable");
+        setDataSource("Live Open-Meteo data unavailable");
       }
     }
 
@@ -84,7 +77,7 @@ export default function App() {
               </span>
 
               <span className="mono text-xs text-gray-500">
-                live rainfall + live river-discharge signal
+                live rainfall from Open-Meteo
               </span>
             </div>
 
@@ -96,9 +89,9 @@ export default function App() {
             </h1>
 
             <p className="mt-3 max-w-2xl text-base text-gray-600 md:text-lg">
-              A live weather-derived commute flood-risk dashboard for Bangkok
-              students, using current rainfall, short-term rainfall forecast,
-              rainfall trend, and river-discharge data.
+              A live rainfall-derived commute flood-risk dashboard for Bangkok
+              students, using current rainfall, short-term rainfall forecast, and
+              rainfall trend data.
             </p>
           </div>
 
@@ -108,7 +101,7 @@ export default function App() {
               {riskResult.homeDistrict} → {riskResult.schoolDistrict}
             </p>
             <p className="mt-1 text-sm text-gray-500">
-              Score {riskResult.score}/12 · {riskResult.level} risk
+              Score {riskResult.score}/8 · {riskResult.level} risk
             </p>
           </div>
         </div>
@@ -153,8 +146,8 @@ export default function App() {
             <div>
               <h3 className="font-semibold">Rainfall signal</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Uses live current rainfall and the highest expected rainfall in
-                the next 3 hours for the selected home and school districts.
+                Uses current rainfall and the highest expected rainfall in the
+                next 3 hours for the selected home and school districts.
               </p>
             </div>
 
@@ -167,10 +160,10 @@ export default function App() {
             </div>
 
             <div>
-              <h3 className="font-semibold">River signal</h3>
+              <h3 className="font-semibold">Data honesty</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Uses nearby river-discharge values from the flood API as an
-                additional flood-pressure signal.
+                This version uses live rainfall data only. It does not claim to
+                be an official BMA flood-alert system.
               </p>
             </div>
           </div>
@@ -178,9 +171,7 @@ export default function App() {
 
         <footer className="pb-8 pt-2 text-sm text-gray-500">
           Data source: {dataSource}. Updated:{" "}
-          {updatedAt ? new Date(updatedAt).toLocaleString() : "loading"}. This
-          version removes simulated flood alerts, fake sensors, and fake flood
-          zones.
+          {updatedAt ? new Date(updatedAt).toLocaleString() : "loading"}.
         </footer>
       </div>
     </main>

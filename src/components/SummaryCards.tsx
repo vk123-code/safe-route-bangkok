@@ -11,25 +11,35 @@ const riskClass = {
 };
 
 export default function SummaryCards({ districts }: Props) {
-  const activeRiskAreas = districts.filter(
+  const safeDistricts = districts.length > 0 ? districts : [];
+
+  const activeRiskAreas = safeDistricts.filter(
     (district) => district.risk === "Medium" || district.risk === "High"
   ).length;
 
-  const highestRainfall = Math.max(
-    ...districts.map((district) => district.next3hRainfallMmHr ?? district.rainfall)
-  );
+  const highestRainfall =
+    safeDistricts.length > 0
+      ? Math.max(
+          ...safeDistricts.map(
+            (district) => district.next3hRainfallMmHr ?? district.rainfall ?? 0
+          )
+        )
+      : 0;
 
-  const mostAffected = [...districts].sort((a, b) => {
-    const bScore =
-      (b.next3hRainfallMmHr ?? b.rainfall) + (b.riverDischargeM3s ?? 0) / 100;
-    const aScore =
-      (a.next3hRainfallMmHr ?? a.rainfall) + (a.riverDischargeM3s ?? 0) / 100;
+  const mostAffected =
+    safeDistricts.length > 0
+      ? [...safeDistricts].sort((a, b) => {
+          const bScore = b.next3hRainfallMmHr ?? b.rainfall ?? 0;
+          const aScore = a.next3hRainfallMmHr ?? a.rainfall ?? 0;
+          return bScore - aScore;
+        })[0]
+      : null;
 
-    return bScore - aScore;
-  })[0];
+  const highDistricts = safeDistricts.filter(
+    (district) => district.risk === "High"
+  ).length;
 
-  const highDistricts = districts.filter((district) => district.risk === "High").length;
-  const mediumDistricts = districts.filter(
+  const mediumDistricts = safeDistricts.filter(
     (district) => district.risk === "Medium"
   ).length;
 
@@ -50,7 +60,7 @@ export default function SummaryCards({ districts }: Props) {
     {
       label: "Most Affected District",
       value: mostAffected?.name ?? "Loading",
-      sub: `${mostAffected?.trend ?? "steady"} rainfall trend`,
+      sub: `${mostAffected?.trend ?? "loading"} rainfall trend`,
     },
     {
       label: "Overall City Risk",
