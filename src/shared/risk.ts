@@ -1,10 +1,5 @@
-import { districts, floodZones } from "./data";
-import type { FloodZone, RiskLevel } from "./data";
-
-type Point = {
-  lat: number;
-  lng: number;
-};
+import { districts } from "./data";
+import type { District, RiskLevel } from "./data";
 
 export type RiskResult = {
   homeDistrict: string;
@@ -15,71 +10,38 @@ export type RiskResult = {
   floodAlertScore: number;
   routeScore: number;
   routeIntersectsFloodZones: boolean;
-  intersectingZones: FloodZone[];
+  intersectingZones: [];
   reasons: string[];
   leaveEarlierMinutes: number;
   recommendedDeparture: string;
 };
 
-const rainfallPoints = (mm: number) => {
+function rainfallPoints(mm: number) {
   if (mm >= 60) return 6;
   if (mm >= 40) return 4;
   if (mm >= 20) return 2;
   return 0;
-};
+}
 
-const alertPoints = (alerts: number) => {
-  if (alerts >= 7) return 6;
-  if (alerts >= 4) return 4;
-  if (alerts >= 1) return 2;
+function trendPoints(home?: string, school?: string) {
+  if (home === "worsening" || school === "worsening") return 2;
   return 0;
-};
+}
 
-const levelFromScore = (score: number): RiskLevel => {
-  if (score >= 12) return "High";
-  if (score >= 6) return "Medium";
+function riverPoints(value: number | null | undefined) {
+  if (value == null) return 0;
+  if (value >= 1200) return 4;
+  if (value >= 800) return 2;
+  return 0;
+}
+
+function levelFromScore(score: number): RiskLevel {
+  if (score >= 8) return "High";
+  if (score >= 4) return "Medium";
   return "Low";
-};
+}
 
-const pointToSegmentDistanceKm = (point: Point, start: Point, end: Point) => {
-  const originLat = ((point.lat + start.lat + end.lat) / 3) * (Math.PI / 180);
-  const kmPerLat = 111;
-  const kmPerLng = 111 * Math.cos(originLat);
-
-  const p = { x: point.lng * kmPerLng, y: point.lat * kmPerLat };
-  const a = { x: start.lng * kmPerLng, y: start.lat * kmPerLat };
-  const b = { x: end.lng * kmPerLng, y: end.lat * kmPerLat };
-
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-
-  if (dx === 0 && dy === 0) {
-    return Math.sqrt((p.x - a.x) ** 2 + (p.y - a.y) ** 2);
-  }
-
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
-
-  const nearest = {
-    x: a.x + t * dx,
-    y: a.y + t * dy,
-  };
-
-  return Math.sqrt((p.x - nearest.x) ** 2 + (p.y - nearest.y) ** 2);
-};
-
-const routeIntersections = (home: Point, school: Point) => {
-  return floodZones.filter((zone) => {
-    const distance = pointToSegmentDistanceKm(
-      { lat: zone.lat, lng: zone.lng },
-      home,
-      school
-    );
-
-    return distance <= zone.radiusKm;
-  });
-};
-
-const subtractMinutes = (time: string, minutes: number) => {
+function subtractMinutes(time: string, minutes: number) {
   const [hourString, minuteString] = time.split(":");
   const hour = Number(hourString);
   const minute = Number(minuteString);
@@ -90,61 +52,83 @@ const subtractMinutes = (time: string, minutes: number) => {
   const newHour = Math.floor(total / 60);
   const newMinute = total % 60;
 
-  return `${String(newHour).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`;
-};
+  return `${String(newHour).padStart(2, "0")}:${String(newMinute).padStart(
+    2,
+    "0"
+  )}`;
+}
 
-export const calculateRisk = (
+export function calculateRiskWithDistricts(
   homeDistrictName: string,
   schoolDistrictName: string,
+  liveDistricts: District[],
   departureTime = "07:30"
-): RiskResult => {
-  const home = districts.find((district) => district.name === homeDistrictName);
-  const school = districts.find((district) => district.name === schoolDistrictName);
+): RiskResult {
+  const home = liveDistricts.find((district) => district.name === homeDistrictName);
+  const school = liveDistricts.find(
+    (district) => district.name === schoolDistrictName
+  );
 
   if (!home || !school) {
     throw new Error("District not found");
   }
 
-  const highestRouteRainfall = Math.max(home.rainfall, school.rainfall);
-  const totalAlerts = home.alerts + school.alerts;
-  const intersectingZones = routeIntersections(home, school);
+  const highestCurrentRainfall = Math.max(
+    home.currentRainfallMmHr ?? home.rainfall,
+    school.currentRainfallMmHr ?? school.rainfall
+  );
 
-  const rainfallScore = rainfallPoints(highestRouteRainfall);
-  const floodAlertScore = alertPoints(totalAlerts);
-  const routeScore = intersectingZones.length > 0 ? 5 : 0;
+  const highestNext3hRainfall = Math.max(
+    home.next3hRainfallMmHr ?? home.rainfall,
+    school.next3hRainfallMmHr ?? school.rainfall
+  );
 
-  const score = rainfallScore + floodAlertScore + routeScore;
+  const strongestRainSignal = Math.max(
+    highestCurrentRainfall,
+    highestNext3hRainfall
+  );
+
+  const rainfallScore = rainfallPoints(strongestRainSignal);
+  const routeScore = trendPoints(home.trend, school.trend);
+
+  const highestRiverDischarge = Math.max(
+    home.riverDischargeM3s ?? 0,
+    school.riverDischargeM3s ?? 0
+  );
+
+  const floodAlertScore = riverPoints(highestRiverDischarge);
+
+  const score = rainfallScore + routeScore + floodAlertScore;
   const level = levelFromScore(score);
 
-  const leaveEarlierMinutes = level === "High" ? 45 : level === "Medium" ? 15 : 0;
+  const leaveEarlierMinutes =
+    level === "High" ? 45 : level === "Medium" ? 15 : 0;
 
-  const reasons: string[] = [];
+  const reasons: string[] = [
+    `Live rainfall signal on this route is ${strongestRainSignal.toFixed(
+      1
+    )} mm/hr based on current and next 3-hour rainfall data.`,
+  ];
 
-  if (highestRouteRainfall >= 60) {
-    reasons.push(`Rainfall is severe on this commute corridor at ${highestRouteRainfall} mm/hr.`);
-  } else if (highestRouteRainfall >= 40) {
-    reasons.push(`Rainfall is elevated on this commute corridor at ${highestRouteRainfall} mm/hr.`);
-  } else if (highestRouteRainfall >= 20) {
-    reasons.push(`Rainfall is moderate on this commute corridor at ${highestRouteRainfall} mm/hr.`);
+  if (home.trend === "worsening" || school.trend === "worsening") {
+    reasons.push("Rainfall trend is worsening in at least one selected district.");
   } else {
-    reasons.push(`Rainfall is currently light at ${highestRouteRainfall} mm/hr.`);
+    reasons.push("Rainfall trend is not currently worsening across the selected route.");
   }
 
-  if (totalAlerts > 0) {
-    reasons.push(`${totalAlerts} flood alert(s) are active across the home and school districts.`);
-  } else {
-    reasons.push("No flood alerts are active in the selected districts.");
-  }
-
-  if (intersectingZones.length > 0) {
+  if (highestRiverDischarge > 0) {
     reasons.push(
-      `The route intersects ${intersectingZones.length} flood-prone zone(s): ${intersectingZones
-        .map((zone) => zone.name)
-        .join(", ")}.`
+      `Nearest river discharge signal is ${highestRiverDischarge.toFixed(
+        1
+      )} m³/s from the live flood API.`
     );
   } else {
-    reasons.push("The route does not intersect a mapped flood-prone zone.");
+    reasons.push("No river discharge warning signal was returned for this route.");
   }
+
+  reasons.push(
+    "This version does not use simulated flood alerts, fake sensors, or fake flood zones."
+  );
 
   return {
     homeDistrict: home.name,
@@ -154,10 +138,23 @@ export const calculateRisk = (
     rainfallScore,
     floodAlertScore,
     routeScore,
-    routeIntersectsFloodZones: intersectingZones.length > 0,
-    intersectingZones,
+    routeIntersectsFloodZones: false,
+    intersectingZones: [],
     reasons,
     leaveEarlierMinutes,
     recommendedDeparture: subtractMinutes(departureTime, leaveEarlierMinutes),
   };
-};
+}
+
+export function calculateRisk(
+  homeDistrictName: string,
+  schoolDistrictName: string,
+  departureTime = "07:30"
+): RiskResult {
+  return calculateRiskWithDistricts(
+    homeDistrictName,
+    schoolDistrictName,
+    districts,
+    departureTime
+  );
+}

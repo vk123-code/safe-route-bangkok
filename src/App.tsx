@@ -5,55 +5,72 @@ import RiskCalculator from "./components/RiskCalculator";
 import RainfallChart from "./components/RainfallChart";
 import DistrictPanel from "./components/DistrictPanel";
 import {
-  districts,
+  districts as fallbackDistricts,
   floodZones,
   rainfallTrend as fallbackRainfallTrend,
   sensors,
 } from "./shared/data";
-import { calculateRisk } from "./shared/risk";
-import type { District } from "./shared/data";
+import { calculateRiskWithDistricts } from "./shared/risk";
+import type { District, RainfallPoint } from "./shared/data";
 import type { RiskResult } from "./shared/risk";
 
 export default function App() {
+  const [districts, setDistricts] = useState<District[]>(fallbackDistricts);
   const [homeDistrict, setHomeDistrict] = useState("Bang Kapi");
   const [schoolDistrict, setSchoolDistrict] = useState("Pathum Wan");
   const [selectedDistrict, setSelectedDistrict] = useState<District | null>(null);
+  const [rainfallTrend, setRainfallTrend] =
+    useState<RainfallPoint[]>(fallbackRainfallTrend);
+  const [dataSource, setDataSource] = useState("Loading live data...");
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const [riskResult, setRiskResult] = useState<RiskResult>(
-    calculateRisk("Bang Kapi", "Pathum Wan", "07:30")
+    calculateRiskWithDistricts(
+      "Bang Kapi",
+      "Pathum Wan",
+      fallbackDistricts,
+      "07:30"
+    )
   );
 
-  const [weatherRainfallTrend, setWeatherRainfallTrend] =
-    useState(fallbackRainfallTrend);
-
-  const [weatherSource, setWeatherSource] = useState("mock-data");
-
   const fallbackDistrict = useMemo(() => {
-    return [...districts].sort(
-      (a, b) => b.rainfall + b.alerts * 8 - (a.rainfall + a.alerts * 8)
-    )[0];
-  }, []);
+    return [...districts].sort((a, b) => {
+      const bScore =
+        (b.next3hRainfallMmHr ?? b.rainfall) + (b.riverDischargeM3s ?? 0) / 100;
+      const aScore =
+        (a.next3hRainfallMmHr ?? a.rainfall) + (a.riverDischargeM3s ?? 0) / 100;
+
+      return bScore - aScore;
+    })[0];
+  }, [districts]);
 
   useEffect(() => {
-    async function loadWeather() {
+    async function loadLiveData() {
       try {
-        const response = await fetch("/api/weather");
+        const response = await fetch("/api/live");
 
         if (!response.ok) {
-          throw new Error("Weather API failed");
+          throw new Error("Live API failed");
         }
 
         const data = await response.json();
 
-        setWeatherRainfallTrend(data.rainfallTrend ?? fallbackRainfallTrend);
-        setWeatherSource(data.source ?? "Open-Meteo Forecast API");
+        setDistricts(data.districts ?? fallbackDistricts);
+        setRainfallTrend(data.rainfallTrend ?? fallbackRainfallTrend);
+        setDataSource(data.source ?? "Open-Meteo");
+        setUpdatedAt(data.updatedAt ?? null);
       } catch {
-        setWeatherRainfallTrend(fallbackRainfallTrend);
-        setWeatherSource("mock-data fallback");
+        setDistricts(fallbackDistricts);
+        setRainfallTrend(fallbackRainfallTrend);
+        setDataSource("Live data unavailable");
       }
     }
 
-    loadWeather();
+    loadLiveData();
+
+    const interval = window.setInterval(loadLiveData, 10 * 60 * 1000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   return (
@@ -65,8 +82,9 @@ export default function App() {
               <span className="mono border border-[#005A9C] px-2 py-1 text-xs font-semibold text-[#005A9C]">
                 BKK-FLOOD-COMMUTE
               </span>
+
               <span className="mono text-xs text-gray-500">
-                student dashboard / live rainfall + mock flood feed
+                live rainfall + live river-discharge signal
               </span>
             </div>
 
@@ -78,8 +96,9 @@ export default function App() {
             </h1>
 
             <p className="mt-3 max-w-2xl text-base text-gray-600 md:text-lg">
-              A student commute flood-risk dashboard that converts rainfall,
-              flood zones, and district alerts into clear route guidance.
+              A live weather-derived commute flood-risk dashboard for Bangkok
+              students, using current rainfall, short-term rainfall forecast,
+              rainfall trend, and river-discharge data.
             </p>
           </div>
 
@@ -89,14 +108,14 @@ export default function App() {
               {riskResult.homeDistrict} → {riskResult.schoolDistrict}
             </p>
             <p className="mt-1 text-sm text-gray-500">
-              Score {riskResult.score}/17 · {riskResult.level} risk
+              Score {riskResult.score}/12 · {riskResult.level} risk
             </p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 md:px-8">
-        <SummaryCards districts={districts} floodZones={floodZones} />
+        <SummaryCards districts={districts} />
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.55fr_0.85fr]">
           <FloodMap
@@ -109,6 +128,7 @@ export default function App() {
           />
 
           <RiskCalculator
+            districts={districts}
             onResult={setRiskResult}
             onRouteChange={(home, school) => {
               setHomeDistrict(home);
@@ -118,7 +138,7 @@ export default function App() {
         </section>
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <RainfallChart data={weatherRainfallTrend} />
+          <RainfallChart data={rainfallTrend} />
 
           <DistrictPanel
             district={selectedDistrict}
@@ -127,39 +147,40 @@ export default function App() {
         </section>
 
         <section className="paper-card p-5">
-          <p className="field-label">Methodology</p>
+          <p className="field-label">Live Methodology</p>
 
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
-              <h3 className="font-semibold">Rainfall score</h3>
+              <h3 className="font-semibold">Rainfall signal</h3>
               <p className="mt-1 text-sm text-gray-600">
-                0 to 6 points based on rainfall intensity across the home and
-                school district corridor.
+                Uses live current rainfall and the highest expected rainfall in
+                the next 3 hours for the selected home and school districts.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold">Flood alert score</h3>
+              <h3 className="font-semibold">Trend signal</h3>
               <p className="mt-1 text-sm text-gray-600">
-                0 to 6 points based on active flood reports in selected commute
-                districts.
+                Compares recent rainfall with earlier rainfall to detect whether
+                conditions are improving, steady, or worsening.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold">Route intersection score</h3>
+              <h3 className="font-semibold">River signal</h3>
               <p className="mt-1 text-sm text-gray-600">
-                5 points added when the route passes through mapped flood-prone
-                zones.
+                Uses nearby river-discharge values from the flood API as an
+                additional flood-pressure signal.
               </p>
             </div>
           </div>
         </section>
 
         <footer className="pb-8 pt-2 text-sm text-gray-500">
-          Weather source: {weatherSource}. Flood zones and district alerts are
-          simulated for demonstration. For real-world use, connect verified city
-          flood feeds.
+          Data source: {dataSource}. Updated:{" "}
+          {updatedAt ? new Date(updatedAt).toLocaleString() : "loading"}. This
+          version removes simulated flood alerts, fake sensors, and fake flood
+          zones.
         </footer>
       </div>
     </main>

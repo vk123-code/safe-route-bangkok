@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { districts } from "../shared/data";
-import { calculateRisk } from "../shared/risk";
+import { calculateRiskWithDistricts } from "../shared/risk";
+import type { District } from "../shared/data";
 import type { RiskResult } from "../shared/risk";
 
 type Props = {
+  districts: District[];
   onResult: (result: RiskResult) => void;
   onRouteChange: (home: string, school: string) => void;
 };
@@ -14,7 +15,11 @@ const badgeClass = {
   High: "bg-red-600 text-white",
 };
 
-export default function RiskCalculator({ onResult, onRouteChange }: Props) {
+export default function RiskCalculator({
+  districts,
+  onResult,
+  onRouteChange,
+}: Props) {
   const [homeDistrict, setHomeDistrict] = useState("Bang Kapi");
   const [schoolDistrict, setSchoolDistrict] = useState("Pathum Wan");
   const [departureTime, setDepartureTime] = useState("07:30");
@@ -36,21 +41,29 @@ export default function RiskCalculator({ onResult, onRouteChange }: Props) {
         }),
       });
 
-      if (!response.ok) throw new Error("API failed");
+      if (!response.ok) throw new Error("Live API failed");
 
       const apiResult = await response.json();
       setResult(apiResult);
       onResult(apiResult);
     } catch {
-      const localResult = calculateRisk(homeDistrict, schoolDistrict, departureTime);
+      const localResult = calculateRiskWithDistricts(
+        homeDistrict,
+        schoolDistrict,
+        districts,
+        departureTime
+      );
+
       setResult(localResult);
       onResult(localResult);
     }
   };
 
   useEffect(() => {
-    runCalculation();
-  }, []);
+    if (districts.length > 0) {
+      runCalculation();
+    }
+  }, [districts]);
 
   return (
     <section className="paper-card p-5">
@@ -100,7 +113,7 @@ export default function RiskCalculator({ onResult, onRouteChange }: Props) {
           onClick={runCalculation}
           className="w-full bg-[#005A9C] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#004577]"
         >
-          Calculate commute risk
+          Calculate live commute risk
         </button>
       </div>
 
@@ -108,7 +121,9 @@ export default function RiskCalculator({ onResult, onRouteChange }: Props) {
         <div className="mt-6 border-t border-gray-200 pt-5">
           <div className="flex items-center justify-between gap-4">
             <p className="field-label">Commute Risk</p>
-            <span className={`rounded-full px-4 py-2 text-sm font-bold ${badgeClass[result.level]}`}>
+            <span
+              className={`rounded-full px-4 py-2 text-sm font-bold ${badgeClass[result.level]}`}
+            >
               {result.level.toUpperCase()}
             </span>
           </div>
@@ -119,11 +134,11 @@ export default function RiskCalculator({ onResult, onRouteChange }: Props) {
               <p className="text-lg font-semibold">{result.rainfallScore}</p>
             </div>
             <div className="paper-card-soft p-3">
-              <p className="field-label">Alerts</p>
+              <p className="field-label">River</p>
               <p className="text-lg font-semibold">{result.floodAlertScore}</p>
             </div>
             <div className="paper-card-soft p-3">
-              <p className="field-label">Route</p>
+              <p className="field-label">Trend</p>
               <p className="text-lg font-semibold">{result.routeScore}</p>
             </div>
           </div>
