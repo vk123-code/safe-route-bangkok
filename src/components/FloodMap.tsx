@@ -36,15 +36,16 @@ function RouteFocus({
   useEffect(() => {
     if (!home || !school) return;
 
-    const bounds: [[number, number], [number, number]] = [
-      [home.lat, home.lng],
-      [school.lat, school.lng],
-    ];
-
-    map.fitBounds(bounds, {
-      padding: [80, 80],
-      maxZoom: 12,
-    });
+    map.fitBounds(
+      [
+        [home.lat, home.lng],
+        [school.lat, school.lng],
+      ],
+      {
+        padding: [80, 80],
+        maxZoom: 12,
+      }
+    );
   }, [home, school, map]);
 
   return null;
@@ -100,7 +101,7 @@ export default function FloodMap({
             district.rainfall ??
             0;
 
-          const radius = Math.max(450, 450 + rain * 120);
+          const radius = Math.max(650, 650 + rain * 160);
 
           return (
             <Circle
@@ -110,7 +111,7 @@ export default function FloodMap({
               pathOptions={{
                 color: riskColor[district.risk],
                 fillColor: riskColor[district.risk],
-                fillOpacity: 0.22,
+                fillOpacity: 0.28,
                 weight: 2,
               }}
               eventHandlers={{
