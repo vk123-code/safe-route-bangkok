@@ -9,9 +9,10 @@ export default async function handler(_req: any, res: any) {
       source: liveData.source,
       updatedAt: liveData.updatedAt,
     });
-  } catch {
+  } catch (error) {
     res.status(500).json({
       error: "Live weather request failed.",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }

@@ -21,9 +21,10 @@ export default async function handler(req: any, res: any) {
     );
 
     res.status(200).json(result);
-  } catch {
+  } catch (error) {
     res.status(400).json({
       error: "Live commute risk calculation failed.",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }

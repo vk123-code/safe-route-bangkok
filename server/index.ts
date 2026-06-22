@@ -14,9 +14,12 @@ app.get("/api/live", async (_req, res) => {
   try {
     const liveData = await fetchLiveBangkokData();
     res.json(liveData);
-  } catch {
+  } catch (error) {
+    console.error("Live data error:", error);
+
     res.status(500).json({
       error: "Live data request failed.",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
@@ -26,7 +29,9 @@ app.get("/api/districts", async (_req, res) => {
     const liveData = await fetchLiveBangkokData();
     res.json(liveData.districts);
   } catch {
-    res.json(districts);
+    res.status(500).json({
+      error: "Live district request failed.",
+    });
   }
 });
 
@@ -34,21 +39,25 @@ app.get("/api/floods", (_req, res) => {
   res.json({
     zones: floodZones,
     sensors,
-    note: "No simulated flood zones or fake sensors are used in the live-data version.",
+    note: "No simulated flood zones or fake sensors are used in this live-rainfall version.",
   });
 });
 
 app.get("/api/weather", async (_req, res) => {
   try {
     const liveData = await fetchLiveBangkokData();
+
     res.json({
       rainfallTrend: liveData.rainfallTrend,
       source: liveData.source,
       updatedAt: liveData.updatedAt,
     });
-  } catch {
+  } catch (error) {
+    console.error("Weather API error:", error);
+
     res.status(500).json({
       error: "Live weather request failed.",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
@@ -67,9 +76,12 @@ app.post("/api/risk", async (req, res) => {
     );
 
     res.json(result);
-  } catch {
+  } catch (error) {
+    console.error("Risk API error:", error);
+
     res.status(400).json({
       error: "Live commute risk calculation failed.",
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
