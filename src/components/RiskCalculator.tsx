@@ -22,48 +22,28 @@ export default function RiskCalculator({
 }: Props) {
   const [homeDistrict, setHomeDistrict] = useState("Bang Kapi");
   const [schoolDistrict, setSchoolDistrict] = useState("Pathum Wan");
-  const [departureTime, setDepartureTime] = useState("07:30");
+  const [departureTime, setDepartureTime] = useState("09:30");
   const [result, setResult] = useState<RiskResult | null>(null);
 
-  const runCalculation = async () => {
+  const runCalculation = () => {
+    if (districts.length === 0) return;
+
     onRouteChange(homeDistrict, schoolDistrict);
 
-    try {
-      const response = await fetch("/api/risk", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          homeDistrict,
-          schoolDistrict,
-          departureTime,
-        }),
-      });
+    const localResult = calculateRiskWithDistricts(
+      homeDistrict,
+      schoolDistrict,
+      districts,
+      departureTime
+    );
 
-      if (!response.ok) throw new Error("Live API failed");
-
-      const apiResult = await response.json();
-      setResult(apiResult);
-      onResult(apiResult);
-    } catch {
-      const localResult = calculateRiskWithDistricts(
-        homeDistrict,
-        schoolDistrict,
-        districts,
-        departureTime
-      );
-
-      setResult(localResult);
-      onResult(localResult);
-    }
+    setResult(localResult);
+    onResult(localResult);
   };
 
   useEffect(() => {
-    if (districts.length > 0) {
-      runCalculation();
-    }
-  }, [districts]);
+    runCalculation();
+  }, [districts, homeDistrict, schoolDistrict, departureTime]);
 
   return (
     <section className="paper-card p-5">
@@ -133,10 +113,12 @@ export default function RiskCalculator({
               <p className="field-label">Rain</p>
               <p className="text-lg font-semibold">{result.rainfallScore}</p>
             </div>
+
             <div className="paper-card-soft p-3">
-              <p className="field-label">River</p>
+              <p className="field-label">Alerts</p>
               <p className="text-lg font-semibold">{result.floodAlertScore}</p>
             </div>
+
             <div className="paper-card-soft p-3">
               <p className="field-label">Trend</p>
               <p className="text-lg font-semibold">{result.routeScore}</p>
@@ -150,7 +132,7 @@ export default function RiskCalculator({
             </p>
             <p className="mt-1 text-sm">
               {result.leaveEarlierMinutes === 0
-                ? "No time adjustment needed."
+                ? "No time adjustment needed because current live rainfall risk is low."
                 : `Leave ${result.leaveEarlierMinutes} minutes earlier than planned.`}
             </p>
           </div>
